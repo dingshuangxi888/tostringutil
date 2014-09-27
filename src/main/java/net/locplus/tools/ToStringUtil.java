@@ -269,7 +269,7 @@ public class ToStringUtil {
             /* get all full fields, include list and short fields */
             private List<String> getAllFullFields() {
                 List<String> result = new ArrayList<String>();
-                result.addAll(getAllListFields());
+                result.addAll(getAllShortFields());
                 result.addAll(fullFields);
                 return result;
             }

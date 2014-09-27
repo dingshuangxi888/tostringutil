@@ -30,6 +30,17 @@ public class B {
     @ToString(ToStringType.LIST)
     private boolean IsBBoolean1 = false;
 
+    @ToString(ToStringType.FULL)
+    private String x = "x";
+
+    public String getX() {
+        return x;
+    }
+
+    public void setX(String x) {
+        this.x = x;
+    }
+
     public int getbInt0() {
         return bInt0;
     }
