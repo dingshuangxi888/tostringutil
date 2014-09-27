@@ -7,134 +7,117 @@ import org.slf4j.LoggerFactory;
 import java.beans.PropertyDescriptor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
- * Created by Dean on 2014/9/24.
+ * ToStringUtil for Objects that @ToString at fields
+ * Created by Dean on 14/9/27.
  */
 public class ToStringUtil {
     private final static Logger logger = LoggerFactory.getLogger(ToStringUtil.class);
 
-    private static Map<String, List<String>> shortFieldMap;
-
-    private static Map<String, List<String>> listFieldMap;
-
-    private static Map<String, List<String>> fullFieldMap;
-
-    private static void init(Object object) {
-        if (shortFieldMap == null || listFieldMap == null) {
-            shortFieldMap = new HashMap<String, List<String>>();
-            listFieldMap = new HashMap<String, List<String>>();
-            fullFieldMap = new HashMap<String, List<String>>();
-        }
-        explainAnnotation(object);
-        System.out.println(shortFieldMap);
-        System.out.println(listFieldMap);
-        System.out.println(fullFieldMap);
+    enum ResultCode {
+        NO_LIST_TO_STRING, NO_SHORT_TO_STRING, NO_FULL_TO_STRING;
     }
 
+    /**
+     * Default toString method, SHORT toString
+     * @param object
+     * @return
+     */
     public static String toString(Object object) {
         if (object == null) {
             return null;
         }
-        init(object);
         return doShortToString(object);
     }
 
-    public static String listToString(List<?> list) {
-        if (list == null && list.isEmpty()) {
+    /**
+     * type is LIST to String method
+     * @param list
+     * @return
+     */
+    public static String listToString(List list) {
+        if (list == null) {
             return null;
         }
-        init(list.get(0));
-        return doListToString(list);
+        if (list.isEmpty()) {
+            return list.toString();
+        }
+        return doListToString(list, false);
     }
 
+    /**
+     * type is FULL to String method
+     * @param object
+     * @return
+     */
     public static String fullToString(Object object) {
         if (object == null) {
             return null;
         }
-        init(object);
         return doFullToString(object);
     }
 
-
+    /* short to string action method */
     private static String doShortToString(Object object) {
-        List<String> fields = getShortFields(object.getClass());
-        return doToString(object, fields, false);
+        if (!ToStringAnnotationExplainer.contains(object.getClass())) {
+            return ResultCode.NO_SHORT_TO_STRING.toString();
+        }
+        List<String> shortFields = ToStringCache.getShortFields(object.getClass());
+        if (shortFields == null || shortFields.isEmpty()) {
+            return ResultCode.NO_SHORT_TO_STRING.toString();
+        }
+        return doToString(object, shortFields, false);
     }
 
-
-
-    private static String doListToString(List<?> list) {
+    /* list to string action method */
+    private static String doListToString(List list, boolean isFull) {
         List<String> result = new ArrayList<String>();
-
         for (Object object : list) {
-            if (isFieldBasicType(object)) {
-                result.add(object.toString());
-            } else {
-                List<String> listFields = getListFields(object.getClass());
-                String toString = doToString(object, listFields, false);
-                if (toString != null) {
-                    result.add(toString);
+            if (ToStringAnnotationExplainer.contains(object.getClass())) {
+                if (isFull) {
+                    List<String> listFields = ToStringCache.getListFields(object.getClass());
+                    if (listFields == null || listFields.isEmpty()) {
+                        result.add(ResultCode.NO_LIST_TO_STRING.toString());
+                    } else {
+                        result.add(doToString(object, listFields, false));
+                    }
+                } else {
+                    List<String> fullFields = ToStringCache.getFullFields(object.getClass());
+                    if (fullFields == null || fullFields.isEmpty()) {
+                        result.add(ResultCode.NO_FULL_TO_STRING.toString());
+                    } else {
+                        result.add(doToString(object, fullFields, false));
+                    }
                 }
+            } else {
+                result.add(object.toString());
             }
         }
-        if (result != null && !result.isEmpty()) {
-            return result.toString();
-        } else {
-            return null;
-        }
+
+        return result.toString();
     }
 
-
-
+    /* full to string action method */
     private static String doFullToString(Object object) {
-        List<String> fields = getFullFields(object.getClass());
-        return doToString(object, fields, true);
+        if (!ToStringAnnotationExplainer.contains(object.getClass())) {
+            return ResultCode.NO_FULL_TO_STRING.toString();
+        }
+        List<String> fullFields = ToStringCache.getFullFields(object.getClass());
+        if (fullFields == null || fullFields.isEmpty()) {
+            return ResultCode.NO_FULL_TO_STRING.toString();
+        }
+        return doToString(object, fullFields, true);
     }
 
-
-
-    private static String doListFullToString(List<?> list) {
-        List<String> result = new ArrayList<String>();
-        for (Object object : list) {
-            if (isFieldBasicType(object)) {
-                result.add(object.toString());
-            } else {
-                List<String> fields = getFullFields(object.getClass());
-                String toString = doToString(object, fields, true);
-                if (toString != null) {
-                    result.add(toString);
-                }
-            }
-        }
-        if (result != null && !result.isEmpty()) {
-            return result.toString();
-        } else {
-            return null;
-        }
-    }
-
+    /* to string action method */
     private static String doToString(Object object, List<String> fields, boolean isFull) {
-        if (fields == null) {
-            return null;
-        }
         MoreObjects.ToStringHelper toStringHelper = MoreObjects.toStringHelper(object);
         for (String fieldName : fields) {
             Object value = getFieldValue(object, fieldName);
-            if (value != null && (value instanceof List)) {
-                String listToString = null;
-                if (isFull) {
-                    listToString = doListFullToString((List<?>) value);
-                } else {
-                    listToString = doListToString((List<?>) value);
-                }
-                if (listToString != null) {
-                    toStringHelper.add(fieldName, listToString);
-                }
+            if (value != null && value instanceof List) {
+                toStringHelper.add(fieldName, doListToString((List) value, isFull));
             } else {
                 toStringHelper.add(fieldName, value);
             }
@@ -142,75 +125,18 @@ public class ToStringUtil {
         return toStringHelper.toString();
     }
 
-    /**
-     * 解析Class对象上的注解，将对应的Field放到对应的Map中
-     *
-     * @param object
-     */
-    private static void explainAnnotation(Object object) {
-
-        List<String> shortFields = new ArrayList<String>();
-        List<String> listFields = new ArrayList<String>();
-        List<String> fullFields = new ArrayList<String>();
-
-        Class clazz = object.getClass();
-        Field[] fields = clazz.getDeclaredFields();
-        if (fields != null) {
-            for (Field field : fields) {
-                if (field.isAnnotationPresent(ToString.class)) {
-                    ToString toString = field.getAnnotation(ToString.class);
-                    System.out.println(toString.value());
-                    if (toString.value() == ToStringType.SHORT) {
-                        System.out.println(field.getName());
-                        shortFields.add(field.getName());
-                    }
-                    if (toString.value() == ToStringType.LIST) {
-                        System.out.println(field.getName());
-                        listFields.add(field.getName());
-                    }
-                    if (toString.value() == ToStringType.FULL || toString.value() == null) {
-                        System.out.println(field.getName());
-                        fullFields.add(field.getName());
-                    }
-
-                    //如果属性是List，则将其中的对象也进行注解扫描
-                    Object fieldObject = getFieldValue(object, field.getName());
-                    if (fieldObject != null && fieldObject instanceof List) {
-                        List fieldList = (List) fieldObject;
-                        if (!fieldList.isEmpty()) {
-                            explainAnnotation(fieldList.get(0));
-                        }
-                    }
-                }
-            }
-        }
-
-        String clazzName = clazz.getName();
-        if (!shortFields.isEmpty()) {
-            shortFieldMap.put(clazzName, shortFields);
-        }
-        if (!listFields.isEmpty()) {
-            listFieldMap.put(clazzName, listFields);
-        }
-        if (!fullFields.isEmpty()) {
-            fullFieldMap.put(clazzName, fullFields);
-        }
-    }
-
-    /**
-     * 通过域名称获取域对应的值
-     *
-     * @param object
-     * @param fieldName
-     * @return
-     */
-    private static Object getFieldValue(Object object, String fieldName) {
+    /* get value of object's field */
+    public static Object getFieldValue(Object object, String fieldName) {
         Object result = null;
         Class clazz = object.getClass();
         try {
+            Field field = clazz.getField(fieldName);
+            if ("boolean".equals(field.getType().getName()) && (fieldName.startsWith("is") || fieldName.startsWith("Is"))) {
+                fieldName = fieldName.substring(2);
+            }
             PropertyDescriptor pd = new PropertyDescriptor(fieldName, clazz);
             Method getMethod = pd.getReadMethod();
-            if (getMethod != null) {
+            if (getMethod == null) {
                 result = getMethod.invoke(object);
             }
         } catch (Exception e) {
@@ -219,80 +145,144 @@ public class ToStringUtil {
         return result;
     }
 
-    /**
-     * 获取所有LIST的域
-     * @param clazz
-     * @return
+    /*
+     * @ToString fields Cache
      */
-    private static List<String> getListFields(Class clazz) {
-        return listFieldMap.get(clazz.getName());
+    private static class ToStringCache {
+
+        /** Cache of @ToString fields */
+        private static Map<String, ToStringFields> fieldsMap = new HashMap<String, ToStringFields>();
+
+        /*
+         * Get all List fields by Class Name
+         */
+        private static List<String> getListFields(Class clazz) {
+            String clazzName = clazz.getName();
+            ToStringFields fields = fieldsMap.get(clazzName);
+            if (fields == null) {
+                fields = ToStringAnnotationExplainer.explain(clazz);
+                if (fields == null) {
+                    return null;
+                }
+            }
+            return fields.getAllListFields();
+        }
+
+        /*
+         * Get all Short fields by Class Name
+         */
+        private static List<String> getShortFields(Class clazz) {
+            String clazzName = clazz.getName();
+            ToStringFields fields = fieldsMap.get(clazzName);
+            if (fields == null) {
+                fields = ToStringAnnotationExplainer.explain(clazz);
+                if (fields == null) {
+                    return null;
+                }
+            }
+            return fields.getAllShortFields();
+        }
+
+        /*
+         * Get all Short fields by Class Name
+         */
+        private static List<String> getFullFields(Class clazz) {
+            String clazzName = clazz.getName();
+            ToStringFields fields = fieldsMap.get(clazzName);
+            if (fields == null) {
+                fields = ToStringAnnotationExplainer.explain(clazz);
+                if (fields == null) {
+                    return null;
+                }
+            }
+            return fields.getAllFullFields();
+        }
+
+        /*
+         * Fields of Object, include LIST, SHORT, FULL
+         */
+        private static class ToStringFields {
+            /* fields @ToString type = LIST */
+            private List<String> listFields = new ArrayList<String>();
+            /* fields @ToString type = SHORT */
+            private List<String> shortFields = new ArrayList<String>();
+            /* fields @ToString type = FULL */
+            private List<String> fullFields = new ArrayList<String>();
+
+            private ToStringFields(List<String> listFields, List<String> shortFields, List<String> fullFields) {
+                this.listFields = listFields;
+                this.shortFields = shortFields;
+                this.fullFields = fullFields;
+            }
+
+            /* get all list fields */
+            private List<String> getAllListFields() {
+                return listFields;
+            }
+
+            /* get all short fields, include list fields */
+            private List<String> getAllShortFields() {
+                List<String> result = new ArrayList<String>();
+                result.addAll(shortFields);
+                result.addAll(getAllListFields());
+                return result;
+            }
+
+            /* get all full fields, include list and short fields */
+            private List<String> getAllFullFields() {
+                List<String> result = new ArrayList<String>();
+                result.addAll(getAllListFields());
+                result.addAll(fullFields);
+                return result;
+            }
+        }
     }
 
-    /**
-     * 获取所有SHORT的域，包括List
-     * @param clazz
-     * @return
-     */
-    private static List<String> getShortFields(Class clazz) {
-        List<String> fields = new ArrayList<String>();
-        List<String> listFields = listFieldMap.get(clazz.getName());
-        List<String> shortFields = shortFieldMap.get(clazz.getName());
-        if (listFields != null) {
-            fields.addAll(listFields);
-        }
-        if (shortFields != null) {
-            fields.addAll(shortFields);
-        }
-        return fields;
-    }
+    /* @ToString annotation explainer */
+    private static class ToStringAnnotationExplainer {
 
-    /**
-     * 获取所有FULL的域，包括SHORT, LIST
-     * @param clazz
-     * @return
-     */
-    private static List<String> getFullFields(Class clazz) {
-        List<String> fields = new ArrayList<String>();
-        List<String> listFields = listFieldMap.get(clazz.getName());
-        List<String> shortFields = shortFieldMap.get(clazz.getName());
-        List<String> fullFields = fullFieldMap.get(clazz.getName());
-        if (listFields != null) {
-            fields.addAll(listFields);
-        }
-        if (shortFields != null) {
-            fields.addAll(shortFields);
-        }
-        if (fullFields != null) {
-            fields.addAll(fullFields);
-        }
-        return fields;
-    }
+        /* Explain @ToString annotation */
+        private static ToStringCache.ToStringFields explain(Class clazz) {
+            ToStringCache.ToStringFields result = null;
+            List<String> listFields = new ArrayList<String>();
+            List<String> shortFields = new ArrayList<String>();
+            List<String> fullFields = new ArrayList<String>();
 
-    /**
-     * 判断属性是否是基本类型
-     * @param param
-     * @return
-     */
-    private static boolean isFieldBasicType(Object param) {
-        boolean result = false;
-        if (param instanceof Integer) {
-            result = true;
+            Field[] fields = clazz.getDeclaredFields();
+            if (fields != null) {
+                for (Field field : fields) {
+                    if (field.isAnnotationPresent(ToString.class)) {
+                        ToString toString = field.getAnnotation(ToString.class);
+                        if (toString.value() == ToStringType.LIST) {
+                            listFields.add(field.getName());
+                        }
+                        if (toString.value() == ToStringType.SHORT) {
+                            shortFields.add(field.getName());
+                        }
+                        if (toString.value() == ToStringType.FULL) {
+                            fullFields.add(field.getName());
+                        }
+                    }
+                }
+            }
+            if (!listFields.isEmpty() || !shortFields.isEmpty() || !fullFields.isEmpty()) {
+                result = new ToStringCache.ToStringFields(listFields, shortFields, fullFields);
+                ToStringCache.fieldsMap.put(clazz.getName(), result);
+            }
+            return result;
         }
-        if (param instanceof String) {
-            result = true;
+
+        /* Judge is clazz contains @ToString annotation */
+        private static boolean contains(Class clazz) {
+            Field[] fields = clazz.getDeclaredFields();
+            if (fields != null) {
+                for (Field field : fields) {
+                    if (field.isAnnotationPresent(ToString.class)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
-        if (param instanceof Double) {
-            result = true;
-        }
-        if (param instanceof Float) {
-            result = true;
-        }
-        if (param instanceof Long) {
-            result = true;
-        }
-        if (param instanceof Boolean) {
-            result = true;
-        }
-        return result;
     }
 }
