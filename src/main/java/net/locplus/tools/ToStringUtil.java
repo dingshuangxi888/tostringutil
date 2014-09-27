@@ -4,10 +4,15 @@ import com.google.common.base.MoreObjects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.beans.BeanInfo;
+import java.beans.Introspector;
 import java.beans.PropertyDescriptor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * ToStringUtil for Objects that @ToString at fields
@@ -130,19 +135,52 @@ public class ToStringUtil {
         Object result = null;
         Class clazz = object.getClass();
         try {
-            Field field = clazz.getField(fieldName);
-            if ("boolean".equals(field.getType().getName()) && (fieldName.startsWith("is") || fieldName.startsWith("Is"))) {
-                fieldName = fieldName.substring(2);
+            Field field = clazz.getDeclaredField(fieldName);
+            if (fieldName.length() > 2 && "boolean".equals(field.getType().getName()) && ((fieldName.startsWith("is") || fieldName.startsWith("Is")) && Character.isUpperCase(fieldName.charAt(2)))) {
+                String methodName = "is" + fieldName.substring(2);
+                Method method = clazz.getMethod(methodName);
+                return method.invoke(object);
             }
-            PropertyDescriptor pd = new PropertyDescriptor(fieldName, clazz);
-            Method getMethod = pd.getReadMethod();
-            if (getMethod == null) {
-                result = getMethod.invoke(object);
+            BeanInfo beanInfo = Introspector.getBeanInfo(clazz);
+            PropertyDescriptor[] pds = beanInfo.getPropertyDescriptors();
+            if (pds != null) {
+                for (PropertyDescriptor pd : pds) {
+                    if (pd.getName().equals(fieldName)) {
+                        Method method = pd.getReadMethod();
+                        result = method.invoke(object);
+                        break;
+                    }
+                }
             }
+//            PropertyDescriptor pd = new PropertyDescriptor(fieldName, clazz);
+//            Method getMethod = pd.getReadMethod();
+//            if (getMethod != null) {
+//                result = getMethod.invoke(object);
+//            }
         } catch (Exception e) {
             e.printStackTrace();
         }
         return result;
+    }
+
+    private static Method generateGetMethod(Class clazz, String fieldName) {
+        try {
+            String methodName = null;
+            Field field = clazz.getDeclaredField(fieldName);
+            if ("boolean".equals(field.getType().getName()) && (fieldName.startsWith("is") || fieldName.startsWith("Is"))) {
+                methodName = "is" + fieldName.substring(2);
+                Method method = clazz.getMethod(methodName);
+                return method;
+            }
+            char first = fieldName.charAt(0);
+            char second = fieldName.charAt(1);
+            if (Character.isUpperCase(second)) {
+                methodName = "get" + fieldName;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
     /*
